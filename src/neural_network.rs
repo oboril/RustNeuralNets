@@ -1,5 +1,7 @@
-use super::layers::{Dense, Relu1D, Layer};
-use super::losses::{Loss, MSE1D};
+use rand::Rng;
+
+use super::layers::{Dense, Relu1D, Layer, LeakyRelu1D};
+use super::losses::{Loss, SumSquares1D};
 
 macro_rules! create_nn {
     ($nn_name:ident, [$($layers:ident:$layers_t:ty),+], $loss:ty) => {
@@ -76,6 +78,10 @@ macro_rules! create_nn {
             fn update_gradient(&mut self, batch_size: f32, momentum: f32) {
                 create_nn!(@update_gradient [self batch_size momentum] [$head1 $($forward)+]);
             }   
+
+            fn get_loss(&self, groundtruth : &Self::OutputType) -> f32 {
+                return Self::Loss::get_loss(self.get_output(), groundtruth);
+            }
         }
     };
     // FEEDFORWARD
@@ -139,76 +145,6 @@ macro_rules! create_nn {
             $self.$offset1.update_gradient($self.$offset0.get_output(), $self.$offset2.get_deltas(), $batch_size, $momentum);
         )+
     };
-
-
-/*
-
-
-    // THIS IS THE INPUT STRUCTURE
-    (
-        $struct_name:ident;
-        $first_layer_name:ident : $first_layer_type:ty,
-        $($layer_name:ident : $layer_type:ty),*;
-        $last_layer_name:ident : $last_layer_type:ty;
-        $loss:ty
-    )
-    // ENDS HERE
-    => {
-        struct $struct_name {
-            $first_layer_name : $first_layer_type,
-            $($layer_name : $layer_type),*,
-            $last_layer_name : $last_layer_type,
-            input : <$first_layer_type as Layer>::InputType,
-            output_deltas : <$last_layer_type as Layer>::OutputType
-        }
-
-        impl NeuralNetwork for $struct_name {
-            type InputType = <$first_layer_type as Layer>::InputType;
-            type OutputType = <$last_layer_type as Layer>::OutputType;
-            type Loss = $loss;
-
-            fn new() -> Self {
-                let new_nn = $struct_name {
-                    $first_layer_name : <$first_layer_type>::new(),
-                    $($layer_name: <$layer_type>::new()),+,
-                    $last_layer_name : <$last_layer_type>::new(),
-                    input: Self::InputType::default(),
-                    output_deltas: Self::OutputType::default()
-                };
-
-                return new_nn;
-            }
-
-            fn update_weights(&mut self, learning_rate:f32, momentum:f32, l2:f32) {
-                self.$first_layer_name.update_weights(learning_rate, momentum, l2);
-                $(self.$layer_name.update_weights(learning_rate, momentum, l2);)+
-                self.$last_layer_name.update_weights(learning_rate, momentum, l2);
-            }
-
-            fn predict(&mut self, input : &Self::InputType) -> &Self::OutputType {
-                self.input = input.clone();
-                self.$first_layer_name.feedforward(&self.input);
-
-                create_nn!(@feedforward self, $first_layer_name,$($layer_name),+; $($layer_name),+, $last_layer_name);
-
-                return self.$last_layer_name.get_output();
-            }
-
-            fn get_output(&self) -> &Self::OutputType {
-                return self.$last_layer_name.get_output();
-            }
-
-            fn backpropagate(&mut self, groundtruth:&Self::OutputType) {
-                self.output_deltas = Self::Loss::get_gradient(self.get_output(), groundtruth);
-                self.$last_layer_name.backpropagate(&self.output_deltas);
-                create_nn!(@backpropagate self, [$first_layer_name, $($layer_name),*, $last_layer_name]);
-            }
-
-            fn update_gradient(&mut self, batch_size: f32, momentum: f32) {
-                create_nn!(@update_gradient [self batch_size momentum] [$first_layer_name])
-            }
-        }
-    };*/
 }
 
 trait NeuralNetwork {
@@ -222,30 +158,116 @@ trait NeuralNetwork {
     fn backpropagate(&mut self, groundtruth : &Self::OutputType);
     fn update_gradient(&mut self, batch_size: f32, momentum: f32);
     fn update_weights(&mut self, learning_rate:f32, momentum:f32, l2: f32);
+    fn get_loss(&self, groundtruth : &Self::OutputType) -> f32;
 }
 
 create_nn!(
     MyNN2,
-    [layer1:Dense<2,4>, layer2:Relu1D<4>],
-    MSE1D<4>
+    [layer1:Dense<4,1>, layer2:Dense<1,1>],
+    SumSquares1D<1>
 );
 create_nn!(
     MyNN3,
-    [layer1:Dense<2,4>, layer2:Relu1D<4>, layer3:Dense<4,1>],
-    MSE1D<1>
+    [layer1:Dense<4,2>, layer2:Dense<2,1>, layer3:Dense<1,1>],
+    SumSquares1D<1>
 );
 create_nn!(
     MyNN4,
-    [layer1:Dense<2,4>, layer2:Relu1D<4>, layer3:Dense<4,1>, layer4:Relu1D<1>],
-    MSE1D<1>
+    [dense1:Dense<2,6>, relu1:LeakyRelu1D<6>, dense2:Dense<6,1>, relu2:Relu1D<1>],
+    SumSquares1D<1>
 );
 
 #[test]
-fn test() {
-    let mut nn = MyNN2::new();
+fn test_nn() {
+    let x : [f32; 5] = [-1.,-0.5, 0.0, 0.5, 1.];
+    let mut x_vec = [[0.0f32;4];5];
+    for (i,&xi) in x.iter().enumerate() {
+        for j in 0..4{
+            x_vec[i][j] = xi.powi(j as i32+1);
+        }
+    }
+    let y = [0.8, 0.1, 0.3, 0.7, 0.5];
 
-    println!("{:?}", nn.input);
-    println!("{:?}", nn.feedforward(&[1., 0.5]));
-    
-    panic!("Im here");
+    println!("{:?}", x_vec);
+
+    let mut nn2 = MyNN2::new();
+
+    for iter in 1..=5000 {
+        let mut mse = 0.0f32;
+
+        for i in 0..5 {
+            nn2.feedforward(&x_vec[i]);
+
+            mse += nn2.get_loss(&[y[i]]);
+
+            nn2.backpropagate(&[y[i]]);
+            nn2.update_gradient(5., 0.1);
+        }
+        nn2.update_weights(0.1, 0.1, 0.);
+
+        if iter < 20 {println!("mse: {}", mse);}
+        
+        if mse < 0.001 {break;}
+        assert!(iter != 5000, "NN2 did not converge, mse = {}", mse);
+    }
+
+    let mut nn3 = MyNN3::new();
+
+    for iter in 1..=5000 {
+        let mut mse = 0.0f32;
+
+        for i in 0..5 {
+            nn3.feedforward(&x_vec[i]);
+
+            mse += nn3.get_loss(&[y[i]]);
+
+            nn3.backpropagate(&[y[i]]);
+            nn3.update_gradient(5., 0.1);
+        }
+        nn3.update_weights(0.1, 0.1, 0.);
+
+        if iter < 20 {println!("mse: {}", mse);}
+        
+        if mse < 0.001 {break;}
+        assert!(iter != 5000, "NN3 did not converge, mse = {}", mse);
+    }
+
+    let x = [[-1., -1.],[-1., 1.],[1.,-1.],[1.,1.]];
+    let y = [1., 0., 0., 1.];
+
+    let mut nn4 = MyNN4::new();
+
+    for iter in 0..=10000 {
+        let mut mse = 0.;
+        for sample in 0..4 {
+            let s = rand::thread_rng().gen_range(0..4usize);
+
+            nn4.feedforward(&x[s]);
+            let output = nn4.relu2.get_output();
+
+            let mse1 = SumSquares1D::get_loss(output, &[y[s]]);
+            let mse2 = (output[0] - y[s]).powi(2);
+            mse += mse1;
+            assert!((mse1 - mse2).abs() < 0.00001);
+            assert!((mse1 - nn4.get_loss(&[y[s]])).abs() < 0.00001);
+
+            let gradient1 = 2.*(output[0] - y[s]);
+            let gradient = SumSquares1D::get_gradient(output, &[y[s]])[0];
+
+            assert!((gradient1 - gradient).abs() < 0.00001);
+
+            nn4.backpropagate(&[y[s]]);
+            assert!((gradient1 - nn4.output_deltas[0]).abs() < 0.00001);
+            nn4.update_gradient(4., 0.1);
+        }
+        if iter < 10 && iter%1==0 {println!("nn4: mse: {}", mse);}
+
+        nn4.update_weights(0.1,0.1,0.001);
+        
+        
+        
+        if mse < 0.01 {break;}
+        assert!(iter != 10000, "NN4 did not converge, mse = {}", mse);
+    }
+
 }

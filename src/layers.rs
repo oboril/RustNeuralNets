@@ -1,7 +1,9 @@
 mod dense;
 mod relu;
+mod leaky_relu;
 pub use dense::Dense;
 pub use relu::Relu1D;
+pub use leaky_relu::LeakyRelu1D;
 
 #[cfg(test)]
 mod tests;

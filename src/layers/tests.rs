@@ -1,3 +1,5 @@
+use crate::losses::{SumSquares1D, Loss};
+
 use super::dense::Dense;
 use super::relu::Relu1D;
 use super::Layer;
@@ -70,13 +72,18 @@ fn test_xor_dense_relu() {
     let x = [[-1., -1.],[-1., 1.],[1.,-1.],[1.,1.]];
     let y = [1., 0., 0., 1.];
 
-    let mut dense1 = Dense::<2,4>::new();
-    let mut relu1 = Relu1D::<4>::new();
-    let mut dense2 = Dense::<4,1>::new();
+    let mut dense1 = Dense::<2,2>::new();
+    let mut relu1 = Relu1D::<2>::new();
+    let mut dense2 = Dense::<2,1>::new();
     let mut relu2 = Relu1D::<1>::new();
 
+    dense1.weights = [[0.8, -1.1],[0.9, -0.6]];
+    dense1.bias = [0.3, -0.1];
+    dense2.weights = [[0.4], [0.6]];
+    dense2.bias = [0.1];
 
-    for iter in 0..1000 {
+
+    for iter in 0..1001 {
         let mut mse = 0.;
         for sample in 0..4 {
             dense1.feedforward(&x[sample]);
@@ -86,36 +93,39 @@ fn test_xor_dense_relu() {
             let output = relu2.get_output();
 
             mse += (output[0] - y[sample]).powi(2);
-            let gradient = 2.*(output[0] - y[sample]);
+            let gradient1 = 2.*(output[0] - y[sample]);
+            let gradient = SumSquares1D::get_gradient(output, &[y[sample]])[0];
+
+            assert!((gradient1 - gradient).abs() < 0.00001);
 
             relu2.backpropagate(&[gradient]);
             dense2.backpropagate(relu2.get_deltas());
             relu1.backpropagate(dense2.get_deltas());
             dense1.backpropagate(relu1.get_deltas());
 
-            dense1.update_gradient(&x[sample], relu1.get_deltas(), 4., 0.);
-            relu1.update_gradient(dense1.get_output(), dense2.get_deltas(), 4., 0.);
-            dense2.update_gradient(relu1.get_output(), relu2.get_deltas(), 4., 0.);
-            relu2.update_gradient(dense2.get_output(), &[gradient], 4., 0.);
+            dense1.update_gradient(&x[sample], relu1.get_deltas(), 4., 0.1);
+            relu1.update_gradient(dense1.get_output(), dense2.get_deltas(), 4., 0.1);
+            dense2.update_gradient(relu1.get_output(), relu2.get_deltas(), 4., 0.1);
+            relu2.update_gradient(dense2.get_output(), &[gradient], 4., 0.1);
         }
 
-        dense1.update_weights(0.1, 0.1, 0.1);
-        relu1.update_weights(0.1, 0.1, 0.1);
-        dense2.update_weights(0.1, 0.1, 0.1);
-        relu2.update_weights(0.1, 0.1, 0.1);
+        dense1.update_weights(0.2, 0.1, 0.001);
+        relu1.update_weights(0.2, 0.1, 0.001);
+        dense2.update_weights(0.2, 0.1, 0.001);
+        relu2.update_weights(0.2, 0.1, 0.001);
 
-        if mse < 0.0001 {
+        if mse < 0.001 {
             break;
         }
-        if iter == 10000-1 {
-            for input in x.iter() {
+        if iter == 1000 {
+            for (i,input) in x.iter().enumerate() {
                 dense1.feedforward(input);
                 relu1.feedforward(dense1.get_output());
                 dense2.feedforward(relu1.get_output());
                 relu2.feedforward(dense2.get_output());
                 let output = relu2.get_output();
 
-                println!("Input: {:?}, output: {}", input, output[0]);
+                println!("Input: {:?}, output: {}, gradient: {}", input, output[0], SumSquares1D::get_gradient(output, &[y[i]])[0]);
             }
             panic!("XOR did not converge, MSE = {}", mse);
         }
