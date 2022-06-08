@@ -3,6 +3,7 @@ use rand::Rng;
 use super::layers::{Dense, Relu1D, Layer, LeakyRelu1D, Softmax};
 use super::losses::{Loss, SumSquares1D, CrossEntropy1D};
 
+#[macro_export]
 macro_rules! create_nn {
     ($nn_name:ident, [$($layers:ident:$layers_t:ty),+], $loss:ty) => {
         create_nn!(@preprocess $nn_name [$($layers : $layers_t),+] [$($layers : $layers_t),*] [] $loss);
@@ -146,8 +147,9 @@ macro_rules! create_nn {
         )+
     };
 }
+pub use create_nn as create_neural_net;
 
-trait NeuralNetwork {
+pub trait NeuralNetwork {
     type InputType;
     type OutputType;
     type Loss : Loss;
