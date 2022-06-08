@@ -1,7 +1,7 @@
 use rand::Rng;
 
-use super::layers::{Dense, Relu1D, Layer, LeakyRelu1D};
-use super::losses::{Loss, SumSquares1D};
+use super::layers::{Dense, Relu1D, Layer, LeakyRelu1D, Softmax};
+use super::losses::{Loss, SumSquares1D, CrossEntropy1D};
 
 macro_rules! create_nn {
     ($nn_name:ident, [$($layers:ident:$layers_t:ty),+], $loss:ty) => {
@@ -270,4 +270,59 @@ fn test_nn() {
         assert!(iter != 10000, "NN4 did not converge, mse = {}", mse);
     }
 
+}
+
+
+create_nn!(
+    MyNN5,
+    [dense1:Dense<2,2>, relu1:LeakyRelu1D<2>, dense2:Dense<2,2>, relu2:Softmax<2>],
+    CrossEntropy1D<2>
+);
+#[test]
+fn test_nn2() {
+    let x : [[f32; 2];4]= [[-1., -1.], [1., -1.], [-1., 1.], [1., 1.]];
+    let y : [[f32;2];4] = [[1., 0.], [0., 1.], [0., 1.], [1., 0.]];
+
+    let mut nn = MyNN5::new();
+
+    nn.dense1.weights = [[1., -1.],[1., -1.]];
+    nn.dense1.bias = [0., 0.];
+    nn.dense2.weights = [[1., -1.],[1., -1.]];
+    nn.dense2.bias = [0., 2.];
+
+
+    for iter in 1..=1000 {
+        for _ in 0..2 {
+            let sample = rand::thread_rng().gen_range(0..4);
+            nn.feedforward(&x[sample]);
+
+            nn.backpropagate(&y[sample]);
+            nn.update_gradient(2., 0.);
+        }
+        nn.update_weights(0.1, 0., 0.000005);
+
+        let mut loss = 0.0f32;
+        for (xi, yi) in x.iter().zip(y.iter()) {
+            nn.feedforward(xi);
+            let out = nn.get_output();
+            assert!(out[0]<=1. && out[1] <= 1., "out = {:?}, softmax inp: {:?}", out, nn.dense2.get_output());
+            loss += nn.get_loss(yi);
+        }
+
+        if iter < 20 && iter%1==0 {println!("loss: {}", loss);}
+        
+        if loss < 0.1 {break;}
+        /*if iter == 1000 {
+            println!("ITER {}", iter);
+            for xi in x.iter() {
+                nn.feedforward(xi);
+                let out = nn.get_output();
+                println!("Input: {:?}, output: {:?}", xi, out);
+            }
+
+            println!("{:?} {:?}", nn.dense2.weights, nn.dense2.bias);
+            println!("{:?} {:?}", nn.dense1.weights, nn.dense1.bias);
+        }*/
+        assert!(iter != 1000, "NN did not converge, loss = {}", loss);
+    }
 }

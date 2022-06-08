@@ -1,9 +1,13 @@
 mod dense;
 mod relu;
 mod leaky_relu;
+mod sigmoid;
+mod softmax;
 pub use dense::Dense;
 pub use relu::Relu1D;
 pub use leaky_relu::LeakyRelu1D;
+pub use sigmoid::Sigmoid;
+pub use softmax::Softmax;
 
 #[cfg(test)]
 mod tests;
